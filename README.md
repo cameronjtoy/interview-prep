@@ -14,6 +14,18 @@ Practice platform for a **Media Strategy Analyst** interview at **Kepler Group**
 
 Question sources are noted on each card. Company-specific tags (Kepler, Merkle, Horizon Media, Mindshare/GroupM) mean a question or a close variant was reported by candidates on Glassdoor; the rest are standard agency-analyst questions.
 
+## Password
+
+The site shows a password screen before anything loads. Once unlocked, the browser remembers it until you click **Lock** in the footer.
+
+To change the password, generate its SHA-256 hash and replace `PASSWORD_HASH` in `src/components/PasswordGate.tsx`:
+
+```bash
+printf '%s' 'new-password' | sha256sum
+```
+
+This keeps casual visitors out, but it is not real security: GitHub Pages is static hosting, the app's JavaScript is public, and so is this repository.
+
 ## Development
 
 ```bash

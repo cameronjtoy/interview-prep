@@ -7,6 +7,7 @@ import MockInterview from './pages/MockInterview'
 import Exercises from './pages/Exercises'
 import { role } from './data/role'
 import BunnyLogo from './components/BunnyLogo'
+import { lock } from './components/PasswordGate'
 
 const links = [
   { to: '/', label: 'Overview' },
@@ -65,6 +66,7 @@ export default function App() {
       </main>
       <footer className="footer">
         Built for practice · {role.company} {role.title} · progress is saved in your browser
+        <button className="btn btn-ghost small footer-lock" onClick={lock}>Lock</button>
       </footer>
     </div>
   )
