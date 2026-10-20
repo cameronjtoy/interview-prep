@@ -1,15 +1,32 @@
 import { useState } from 'react'
-import { exercises } from '../data/exercises'
+import { exerciseTemplates } from '../data/exercises'
 import { recordExercise, useProgress } from '../hooks/useProgress'
+import { shuffle } from '../lib'
 import type { Exercise } from '../types'
 
-const topics = ['All', ...new Set(exercises.map((e) => e.topic))]
+const topics = ['All', ...new Set(exerciseTemplates.map((t) => t.topic))]
+
+interface Instance {
+  ex: Exercise
+  /** Bumped on regeneration so the card's local state resets. */
+  key: number
+}
+
+let nextKey = 0
+const makeInstance = (id: string): Instance => ({
+  ex: exerciseTemplates.find((t) => t.id === id)!.make(),
+  key: nextKey++,
+})
+const freshSet = () => shuffle(exerciseTemplates).map((t) => makeInstance(t.id))
 
 export default function Exercises() {
   const [topic, setTopic] = useState('All')
+  const [set, setSet] = useState(freshSet)
   const { exercises: results } = useProgress()
-  const visible = exercises.filter((e) => topic === 'All' || e.topic === topic)
+  const visible = set.filter((i) => topic === 'All' || i.ex.topic === topic)
   const correct = Object.values(results).filter(Boolean).length
+
+  const regenerate = (id: string) => setSet((s) => s.map((i) => (i.ex.id === id ? makeInstance(id) : i)))
 
   return (
     <div className="stack narrow">
@@ -17,19 +34,28 @@ export default function Exercises() {
         <h1>Exercises</h1>
         <p className="muted">
           Metric math, campaign tables, SQL and Excel — the hands-on part of agency analyst interviews.
-          Work it out on paper first. {correct}/{exercises.length} correct so far.
+          Math problems get new numbers every time, so work them out on paper. {correct}/{exerciseTemplates.length} correct so far.
         </p>
       </div>
-      <div className="pill-row">
-        {topics.map((t) => (
-          <button key={t} className={`pill${topic === t ? ' active' : ''}`} onClick={() => setTopic(t)}>
-            {t}
-          </button>
-        ))}
+      <div className="toolbar">
+        <div className="pill-row">
+          {topics.map((t) => (
+            <button key={t} className={`pill${topic === t ? ' active' : ''}`} onClick={() => setTopic(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <button className="btn small" onClick={() => setSet(freshSet())}>↻ New set</button>
       </div>
       <div className="stack-sm">
-        {visible.map((ex, i) => (
-          <ExerciseCard key={ex.id} ex={ex} n={i + 1} prior={results[ex.id]} />
+        {visible.map((inst, i) => (
+          <ExerciseCard
+            key={inst.key}
+            ex={inst.ex}
+            n={i + 1}
+            prior={results[inst.ex.id]}
+            onRegenerate={inst.ex.kind === 'numeric' ? () => regenerate(inst.ex.id) : undefined}
+          />
         ))}
       </div>
     </div>
@@ -41,7 +67,7 @@ function parseNumber(raw: string) {
   return Number.isFinite(n) ? n : null
 }
 
-function ExerciseCard({ ex, n, prior }: { ex: Exercise; n: number; prior?: boolean }) {
+function ExerciseCard({ ex, n, prior, onRegenerate }: { ex: Exercise; n: number; prior?: boolean; onRegenerate?: () => void }) {
   const [input, setInput] = useState('')
   const [choice, setChoice] = useState<number | null>(null)
   const [result, setResult] = useState<boolean | null>(null)
@@ -73,6 +99,9 @@ function ExerciseCard({ ex, n, prior }: { ex: Exercise; n: number; prior?: boole
         <span className="muted small">#{n}</span>
         {prior !== undefined && result === null && (
           <span className={`small ${prior ? 'ok-text' : 'bad-text'}`}>{prior ? '✓ solved before' : '✗ missed before'}</span>
+        )}
+        {onRegenerate && result === null && (
+          <button className="btn btn-ghost small ex-new" onClick={onRegenerate}>↻ New numbers</button>
         )}
       </div>
       {ex.context && <pre className="context">{ex.context}</pre>}
@@ -125,8 +154,9 @@ function ExerciseCard({ ex, n, prior }: { ex: Exercise; n: number; prior?: boole
         <div className="feedback">
           <strong>{result ? 'Correct.' : ex.kind === 'numeric' ? `Not quite — answer: ${formatAnswer(ex)}` : 'Not quite.'}</strong>{' '}
           {ex.explanation}
-          <div>
-            <button className="btn btn-ghost small" onClick={reset}>Try again</button>
+          <div className="row">
+            {onRegenerate && <button className="btn btn-ghost small" onClick={onRegenerate}>↻ Try new numbers</button>}
+            <button className="btn btn-ghost small" onClick={reset}>Retry this one</button>
           </div>
         </div>
       )}
