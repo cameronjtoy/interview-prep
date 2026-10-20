@@ -1,4 +1,219 @@
-import type { Exercise } from '../types'
+import type { ChoiceExercise, Exercise, NumericExercise } from '../types'
+import { shuffle } from '../lib'
+
+/** A template produces a fresh exercise each time `make` is called. */
+export interface ExerciseTemplate {
+  id: string
+  topic: string
+  make: () => Exercise
+}
+
+const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]
+const range = (lo: number, hi: number, step: number) =>
+  Array.from({ length: Math.floor((hi - lo) / step) + 1 }, (_, i) => lo + i * step)
+const round = (n: number, dp = 2) => Math.round(n * 10 ** dp) / 10 ** dp
+const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
+
+type NumericSpec = Omit<NumericExercise, 'id' | 'topic' | 'kind'>
+
+function numeric(id: string, topic: string, gen: () => NumericSpec): ExerciseTemplate {
+  return { id, topic, make: () => ({ id, topic, kind: 'numeric', ...gen() }) }
+}
+
+const numericTemplates: ExerciseTemplate[] = [
+  numeric('ex-cpm', 'Metric math', () => {
+    const spend = pick(range(1500, 9000, 500))
+    const impr = pick(range(200_000, 1_200_000, 50_000))
+    const cpm = round((spend / impr) * 1000)
+    return {
+      prompt: `A campaign spent ${money(spend)} for ${fmt(impr)} impressions. What is the CPM?`,
+      answer: cpm,
+      tolerance: 0.011,
+      unit: '$',
+      explanation: `CPM = cost / impressions × 1,000 = ${fmt(spend)} / ${fmt(impr)} × 1,000 ≈ ${money(cpm)}.`,
+    }
+  }),
+  numeric('ex-ctr', 'Metric math', () => {
+    const impr = pick(range(300_000, 1_500_000, 50_000))
+    const ctr = pick([0.4, 0.5, 0.6, 0.8, 1, 1.2, 1.5, 2])
+    const clicks = Math.round((impr * ctr) / 100)
+    return {
+      prompt: `${fmt(impr)} impressions produced ${fmt(clicks)} clicks. What is the CTR (in %)?`,
+      answer: ctr,
+      tolerance: 0.01,
+      unit: '%',
+      explanation: `CTR = ${fmt(clicks)} / ${fmt(impr)} = ${ctr}%.`,
+    }
+  }),
+  numeric('ex-cpa', 'Metric math', () => {
+    const cpc = pick([0.5, 0.8, 1.2, 1.5, 2, 2.5, 3])
+    const cvr = pick([2, 2.5, 3, 4, 5, 8])
+    const cpa = round(cpc / (cvr / 100))
+    return {
+      prompt: `CPC is ${money(cpc)} and CVR is ${cvr}%. What is the CPA?`,
+      answer: cpa,
+      tolerance: 0.011,
+      unit: '$',
+      explanation: `CPA = CPC / CVR = ${cpc} / ${cvr / 100} = ${money(cpa)}.`,
+    }
+  }),
+  numeric('ex-roas', 'Metric math', () => {
+    const spend = pick(range(5000, 30_000, 1000))
+    const roas = pick([1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6])
+    return {
+      prompt: `Spend ${money(spend)}, revenue ${money(spend * roas)}. What is ROAS (as a multiple, e.g. 3.5)?`,
+      answer: roas,
+      tolerance: 0.01,
+      unit: 'x',
+      explanation: `ROAS = revenue / spend = ${fmt(spend * roas)} / ${fmt(spend)} = ${roas}x.`,
+    }
+  }),
+  numeric('ex-cpc-from-cpm', 'Metric math', () => {
+    const cpm = pick([4, 5, 6, 8, 10, 12, 15, 20])
+    const ctr = pick([0.4, 0.5, 0.8, 1, 1.25, 2])
+    const clicksPerK = 10 * ctr
+    const cpc = round(cpm / clicksPerK)
+    return {
+      prompt: `CPM is ${money(cpm)} and CTR is ${ctr}%. What is the CPC?`,
+      answer: cpc,
+      tolerance: 0.011,
+      unit: '$',
+      explanation: `Per 1,000 impressions you pay ${money(cpm)} and get ${fmt(clicksPerK)} clicks → CPC = ${cpm} / ${fmt(clicksPerK)} ≈ ${money(cpc)}.`,
+    }
+  }),
+  numeric('ex-break-even', 'Profitability', () => {
+    const margin = pick(range(15, 70, 5))
+    const be = round(100 / margin)
+    return {
+      prompt: `Gross margin is ${margin}%. What is the break-even ROAS (to two decimals)?`,
+      answer: be,
+      tolerance: 0.011,
+      unit: 'x',
+      explanation: `Break-even ROAS = 1 / margin = 1 / ${margin / 100} ≈ ${be}x.`,
+    }
+  }),
+  numeric('ex-max-cpa', 'Profitability', () => {
+    const aov = pick([40, 60, 80, 100, 120, 150, 200])
+    const margin = pick([25, 30, 40, 50, 60])
+    const max = round((aov * margin) / 100)
+    return {
+      prompt: `AOV is ${money(aov)}, gross margin ${margin}%. What is the maximum CPA to break even on the first order?`,
+      answer: max,
+      tolerance: 0.011,
+      unit: '$',
+      explanation: `Gross profit per order = ${aov} × ${margin / 100} = ${money(max)}; that is the most you can pay per acquisition.`,
+    }
+  }),
+  numeric('ex-budget-needed', 'Planning', () => {
+    const target = pick([100, 200, 250, 300, 400, 500])
+    const cvr = pick([2, 2.5, 4, 5])
+    const cpc = pick([0.6, 0.9, 1.2, 1.5, 2])
+    const clicks = target / (cvr / 100)
+    const budget = round(clicks * cpc)
+    return {
+      prompt: `Target ${target} conversions. CVR ${cvr}%, CPC ${money(cpc)}. How much budget do you need?`,
+      answer: budget,
+      tolerance: 1,
+      unit: '$',
+      explanation: `Clicks = ${target} / ${cvr / 100} = ${fmt(clicks)}; budget = ${fmt(clicks)} × ${cpc} = ${money(budget)}.`,
+    }
+  }),
+  numeric('ex-impressions', 'Planning', () => {
+    const budget = pick(range(10_000, 50_000, 5000))
+    const cpm = pick([20, 25, 30, 35, 40, 45])
+    const impr = Math.round((budget / cpm) * 1000)
+    return {
+      prompt: `A ${money(budget)} CTV budget at a ${money(cpm)} CPM buys how many impressions?`,
+      answer: impr,
+      tolerance: Math.max(1, impr * 0.001),
+      explanation: `Impressions = ${fmt(budget)} / ${cpm} × 1,000 ≈ ${fmt(impr)}.`,
+    }
+  }),
+  numeric('ex-reach', 'Planning', () => {
+    const impr = pick(range(1_000_000, 6_000_000, 500_000))
+    const freq = pick([2, 2.5, 4, 5])
+    const reach = Math.round(impr / freq)
+    return {
+      prompt: `A campaign delivered ${fmt(impr)} impressions at an average frequency of ${freq}. What was the reach?`,
+      answer: reach,
+      tolerance: Math.max(1, reach * 0.001),
+      explanation: `Reach = impressions / frequency = ${fmt(impr)} / ${freq} = ${fmt(reach)} people.`,
+    }
+  }),
+  numeric('ex-pct-change', 'Mental math', () => {
+    const s = pick([10, 15, 20, 25, 30, 40])
+    const c = pick([0, 5, 10, 15, 20].filter((x) => x < s))
+    const ratio = (1 + s / 100) / (1 + c / 100)
+    const change = round((ratio - 1) * 100, 1)
+    return {
+      prompt: `Spend up ${s}%, conversions up ${c}%. By what % did CPA change? (one decimal)`,
+      answer: change,
+      tolerance: 0.11,
+      unit: '%',
+      explanation: `New CPA = ${fmt(1 + s / 100)} / ${fmt(1 + c / 100)} = ${round(ratio, 4)} × old → +${change}%.`,
+    }
+  }),
+  numeric('ex-blended-cvr', 'Mental math', () => {
+    const ca = pick([1000, 2000, 3000, 4000])
+    const ra = pick([1, 2, 3])
+    const cb = pick([500, 1000])
+    const rb = pick([4, 5, 6, 8])
+    const conv = (ca * ra) / 100 + (cb * rb) / 100
+    const cvr = round((conv / (ca + cb)) * 100)
+    return {
+      prompt: `Campaign A: ${fmt(ca)} clicks at ${ra}% CVR. Campaign B: ${fmt(cb)} clicks at ${rb}% CVR. What is the blended CVR (in %)?`,
+      answer: cvr,
+      tolerance: 0.011,
+      unit: '%',
+      explanation: `Conversions = ${fmt((ca * ra) / 100)} + ${fmt((cb * rb) / 100)} = ${fmt(conv)}; clicks = ${fmt(ca + cb)}; CVR = ${cvr}% (not the ${fmt((ra + rb) / 2)}% simple average).`,
+    }
+  }),
+  numeric('ex-lift', 'Incrementality', () => {
+    const control = pick([1.5, 2, 2.5, 3])
+    const exposed = round(control * (1 + pick([10, 15, 20, 25, 30, 40]) / 100))
+    const lift = round(((exposed - control) / control) * 100, 1)
+    return {
+      prompt: `Lift test: exposed group converts at ${exposed}%, holdout at ${control}%. What is the relative lift (in %)?`,
+      answer: lift,
+      tolerance: 0.11,
+      unit: '%',
+      explanation: `Lift = (${exposed} − ${control}) / ${control} ≈ ${lift}%. Only ${fmt(round(exposed - control))} / ${exposed} ≈ ${round(((exposed - control) / exposed) * 100, 0)}% of exposed-group conversions are incremental.`,
+    }
+  }),
+  numeric('ex-iroas', 'Incrementality', () => {
+    const spend = pick(range(20_000, 100_000, 10_000))
+    const iroas = pick([0.8, 1.2, 1.5, 1.8, 2, 2.5, 3])
+    return {
+      prompt: `A geo test spent ${money(spend)} and produced ${money(spend * iroas)} in incremental revenue. What is iROAS?`,
+      answer: iroas,
+      tolerance: 0.01,
+      unit: 'x',
+      explanation: `iROAS = incremental revenue / spend = ${fmt(spend * iroas)} / ${fmt(spend)} = ${iroas}x — often much lower than platform-reported ROAS.`,
+    }
+  }),
+  numeric('ex-marginal-cpa', 'Budget allocation', () => {
+    const base = pick([8, 10, 12, 20]) * 1000
+    const extra = pick([4, 5, 6]) * 1000
+    const conv = pick(range(200, 400, 10))
+    const extraConv = pick(range(40, 120, 10))
+    const marginal = Math.round(extra / extraConv)
+    const avg = round((base + extra) / (conv + extraConv), 0)
+    return {
+      prompt: `At ${money(base)}/week a campaign gets ${conv} conversions; at ${money(base + extra)} it gets ${conv + extraConv}. What is the marginal CPA of the extra ${money(extra)}? (nearest dollar)`,
+      answer: marginal,
+      tolerance: 1,
+      unit: '$',
+      explanation: `Marginal CPA = ${fmt(extra)} / ${extraConv} ≈ ${money(marginal)}, versus an average CPA of ${money(avg)} at ${money(base + extra)}. Allocate on marginal, not average.`,
+    }
+  }),
+]
+
+/** Shuffle the options while keeping track of the right answer. */
+function shuffleOptions(ex: ChoiceExercise): ChoiceExercise {
+  const order = shuffle(ex.options.map((_, i) => i))
+  return { ...ex, options: order.map((i) => ex.options[i]), answerIndex: order.indexOf(ex.answerIndex) }
+}
 
 const CAMPAIGNS = `Campaign      Spend    Impr.      Clicks   Conv.   Revenue
 Search-Brand  $2,000   40,000     4,000    400     $32,000
@@ -7,155 +222,7 @@ Meta-Prosp    $10,000  2,000,000  16,000   320     $22,400
 Meta-Retarg   $3,000   300,000    4,500    180     $14,400
 Display       $5,000   2,500,000  2,500    50      $3,500`
 
-export const exercises: Exercise[] = [
-  {
-    id: 'ex-cpm',
-    kind: 'numeric',
-    topic: 'Metric math',
-    prompt: 'A campaign spent $4,500 for 600,000 impressions. What is the CPM?',
-    answer: 7.5,
-    tolerance: 0.01,
-    unit: '$',
-    explanation: 'CPM = cost / impressions × 1,000 = 4,500 / 600,000 × 1,000 = $7.50.',
-  },
-  {
-    id: 'ex-ctr',
-    kind: 'numeric',
-    topic: 'Metric math',
-    prompt: '850,000 impressions produced 6,800 clicks. What is the CTR (in %)?',
-    answer: 0.8,
-    tolerance: 0.01,
-    unit: '%',
-    explanation: 'CTR = 6,800 / 850,000 = 0.008 = 0.80%.',
-  },
-  {
-    id: 'ex-cpa',
-    kind: 'numeric',
-    topic: 'Metric math',
-    prompt: 'CPC is $1.20 and CVR is 3%. What is the CPA?',
-    answer: 40,
-    tolerance: 0.01,
-    unit: '$',
-    explanation: 'CPA = CPC / CVR = 1.20 / 0.03 = $40.',
-  },
-  {
-    id: 'ex-roas',
-    kind: 'numeric',
-    topic: 'Metric math',
-    prompt: 'Spend $12,000, revenue $42,000. What is ROAS (as a multiple, e.g. 3.5)?',
-    answer: 3.5,
-    tolerance: 0.01,
-    unit: 'x',
-    explanation: 'ROAS = revenue / spend = 42,000 / 12,000 = 3.5x.',
-  },
-  {
-    id: 'ex-cpc-from-cpm',
-    kind: 'numeric',
-    topic: 'Metric math',
-    prompt: 'CPM is $10 and CTR is 0.5%. What is the CPC?',
-    answer: 2,
-    tolerance: 0.01,
-    unit: '$',
-    explanation: 'Per 1,000 impressions you pay $10 and get 5 clicks → CPC = 10 / 5 = $2.00.',
-  },
-  {
-    id: 'ex-break-even',
-    kind: 'numeric',
-    topic: 'Profitability',
-    prompt: 'Gross margin is 35%. What is the break-even ROAS (to two decimals)?',
-    answer: 2.86,
-    tolerance: 0.01,
-    unit: 'x',
-    explanation: 'Break-even ROAS = 1 / margin = 1 / 0.35 ≈ 2.86x.',
-  },
-  {
-    id: 'ex-max-cpa',
-    kind: 'numeric',
-    topic: 'Profitability',
-    prompt: 'AOV is $120, gross margin 40%. What is the maximum CPA to break even on the first order?',
-    answer: 48,
-    tolerance: 0.01,
-    unit: '$',
-    explanation: 'Gross profit per order = 120 × 0.40 = $48; that is the most you can pay per acquisition.',
-  },
-  {
-    id: 'ex-budget-needed',
-    kind: 'numeric',
-    topic: 'Planning',
-    prompt: 'Target 300 conversions. CVR 4%, CPC $0.90. How much budget do you need?',
-    answer: 6750,
-    tolerance: 1,
-    unit: '$',
-    explanation: 'Clicks = 300 / 0.04 = 7,500; budget = 7,500 × 0.90 = $6,750.',
-  },
-  {
-    id: 'ex-impressions',
-    kind: 'numeric',
-    topic: 'Planning',
-    prompt: 'A $25,000 CTV budget at a $35 CPM buys how many impressions?',
-    answer: 714286,
-    tolerance: 50,
-    explanation: 'Impressions = 25,000 / 35 × 1,000 ≈ 714,286.',
-  },
-  {
-    id: 'ex-reach',
-    kind: 'numeric',
-    topic: 'Planning',
-    prompt: 'A campaign delivered 3,000,000 impressions at an average frequency of 4. What was the reach?',
-    answer: 750000,
-    tolerance: 1,
-    explanation: 'Reach = impressions / frequency = 3,000,000 / 4 = 750,000 people.',
-  },
-  {
-    id: 'ex-pct-change',
-    kind: 'numeric',
-    topic: 'Mental math',
-    prompt: 'Spend up 20%, conversions up 10%. By what % did CPA change? (one decimal)',
-    answer: 9.1,
-    tolerance: 0.1,
-    unit: '%',
-    explanation: 'New CPA = 1.20 / 1.10 = 1.0909 × old → +9.1%.',
-  },
-  {
-    id: 'ex-blended-cvr',
-    kind: 'numeric',
-    topic: 'Mental math',
-    prompt: 'Campaign A: 2,000 clicks at 2% CVR. Campaign B: 500 clicks at 6% CVR. What is the blended CVR (in %)?',
-    answer: 2.8,
-    tolerance: 0.01,
-    unit: '%',
-    explanation: 'Conversions = 40 + 30 = 70; clicks = 2,500; CVR = 70 / 2,500 = 2.8% (not the 4% simple average).',
-  },
-  {
-    id: 'ex-lift',
-    kind: 'numeric',
-    topic: 'Incrementality',
-    prompt: 'Lift test: exposed group converts at 2.4%, holdout at 2.0%. What is the relative lift (in %)?',
-    answer: 20,
-    tolerance: 0.1,
-    unit: '%',
-    explanation: 'Lift = (2.4 − 2.0) / 2.0 = 20%. Only 0.4 / 2.4 ≈ 17% of exposed-group conversions are incremental.',
-  },
-  {
-    id: 'ex-iroas',
-    kind: 'numeric',
-    topic: 'Incrementality',
-    prompt: 'A geo test spent $50,000 and produced $90,000 in incremental revenue. What is iROAS?',
-    answer: 1.8,
-    tolerance: 0.01,
-    unit: 'x',
-    explanation: 'iROAS = incremental revenue / spend = 90,000 / 50,000 = 1.8x — often much lower than platform-reported ROAS.',
-  },
-  {
-    id: 'ex-marginal-cpa',
-    kind: 'numeric',
-    topic: 'Budget allocation',
-    prompt: 'At $10K/week a campaign gets 250 conversions; at $15K it gets 320. What is the marginal CPA of the extra $5K? (nearest dollar)',
-    answer: 71,
-    tolerance: 1,
-    unit: '$',
-    explanation: 'Marginal CPA = 5,000 / 70 ≈ $71, versus an average CPA of $47 at $15K. Allocate on marginal, not average.',
-  },
+const choiceExercises: ChoiceExercise[] = [
   {
     id: 'ex-table-best-roas',
     kind: 'choice',
@@ -297,4 +364,9 @@ conversions (campaign_id, conv_date) -- only 38 campaigns appear`,
     answerIndex: 1,
     explanation: 'A two-proportion z-test gives z ≈ 0.98 (p ≈ 0.33). A 1-point gap on 1,000 clicks each is well within noise.',
   },
+]
+
+export const exerciseTemplates: ExerciseTemplate[] = [
+  ...numericTemplates,
+  ...choiceExercises.map((ex) => ({ id: ex.id, topic: ex.topic, make: () => shuffleOptions(ex) })),
 ]

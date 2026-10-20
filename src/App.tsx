@@ -6,6 +6,7 @@ import Flashcards from './pages/Flashcards'
 import MockInterview from './pages/MockInterview'
 import Exercises from './pages/Exercises'
 import { role } from './data/role'
+import BunnyLogo from './components/BunnyLogo'
 
 const links = [
   { to: '/', label: 'Overview' },
@@ -29,7 +30,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-inner">
           <NavLink to="/" className="brand">
-            <span className="brand-mark" aria-hidden>✳</span>
+            <BunnyLogo />
             <span>
               Interview Prep
               <span className="brand-sub">{role.title}</span>

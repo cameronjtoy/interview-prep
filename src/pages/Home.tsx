@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import ProgressBar from '../components/ProgressBar'
-import { exercises } from '../data/exercises'
+import { exerciseTemplates } from '../data/exercises'
 import { questions } from '../data/questions'
 import { categories, role } from '../data/role'
 import { resetProgress, useProgress } from '../hooks/useProgress'
@@ -35,7 +35,7 @@ export default function Home() {
           <span className="stat-label">marked confident · {needsWork} need work</span>
         </div>
         <div className="stat">
-          <span className="stat-num">{exCorrect}/{exercises.length}</span>
+          <span className="stat-num">{exCorrect}/{exerciseTemplates.length}</span>
           <span className="stat-label">exercises correct · {exDone} attempted</span>
         </div>
       </section>
